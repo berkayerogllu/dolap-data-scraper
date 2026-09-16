@@ -7,3 +7,5 @@ env/
 *.xlsx
 *.csv
 data/
+logs/
+*.log
