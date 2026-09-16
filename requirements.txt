@@ -4,3 +4,4 @@ httpx
 pandas
 openpyxl
 pydantic
+python-dotenv
