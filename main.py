@@ -2,6 +2,7 @@ import httpx
 import asyncio
 import os
 import pandas as pd
+from datetime import datetime
 from fastapi import FastAPI, BackgroundTasks, Depends, HTTPException, Security, status
 from fastapi.security import APIKeyHeader
 from typing import List
@@ -109,7 +110,6 @@ async def fetch_dolap_data(keyword: str, page_limit: int) -> List[ProductInfo]:
                         validated_prod = ProductInfo(**prod)
                         all_products.append(validated_prod)
                     except Exception as e:
-                        # Use warning for individual parsing errors so it doesn't stop the whole process
                         logger.warning(f"Failed to parse product ID {prod.get('id', 'UNKNOWN')}. Error: {e}")
                 
                 # Wait for half a second between pages to avoid rate limiting
@@ -130,15 +130,23 @@ async def start_scraping(keyword: str, background_tasks: BackgroundTasks, pages:
     """
     Endpoint to start the scraping process. Runs the Excel save task in the background.
     Protected by API Key verification.
+    Saves files in a structured date format: data/YYYY-MM-DD/keyword_HH-MM-SS.xlsx
     """
     logger.info(f"Received authenticated scrape request. Keyword: '{keyword}', Pages: {pages}")
     
-    # Ensure the 'data' directory exists
-    os.makedirs("data", exist_ok=True)
+    # Generate timestamp components
+    now = datetime.now()
+    date_folder = now.strftime("%Y-%m-%d")
+    time_suffix = now.strftime("%H-%M-%S")
     
-    # Create a safe filename and path
-    filename = keyword.replace(" ", "_").lower() + ".xlsx"
-    filepath = os.path.join("data", filename)
+    # Create the date-based directory (e.g., data/2026-09-22)
+    target_dir = os.path.join("data", date_folder)
+    os.makedirs(target_dir, exist_ok=True)
+    
+    # Create a safe and unique filename (e.g., iphone_14-30-05.xlsx)
+    safe_keyword = keyword.replace(" ", "_").lower()
+    filename = f"{safe_keyword}_{time_suffix}.xlsx"
+    filepath = os.path.join(target_dir, filename)
     
     # Fetch the data asynchronously
     scraped_data = await fetch_dolap_data(keyword=keyword, page_limit=pages)
