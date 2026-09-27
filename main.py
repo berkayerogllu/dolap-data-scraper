@@ -5,6 +5,7 @@ import pandas as pd
 from datetime import datetime
 from fastapi import FastAPI, BackgroundTasks, Depends, HTTPException, Security, status
 from fastapi.security import APIKeyHeader
+from fastapi.responses import FileResponse
 from typing import List
 from dotenv import load_dotenv
 from schemas import ProductInfo
@@ -159,3 +160,59 @@ async def start_scraping(keyword: str, background_tasks: BackgroundTasks, pages:
         "status": "success", 
         "message": f"Scraped {pages} page(s) for '{keyword}'. Found {len(scraped_data)} products. Saving to {filepath} in the background."
     }
+
+@app.get("/files")
+async def list_files(api_key: str = Depends(verify_api_key)):
+    """
+    Returns a structured dictionary of all saved Excel files categorized by date.
+    Protected by API Key verification.
+    """
+    data_dir = "data"
+    if not os.path.exists(data_dir):
+        return {"status": "success", "message": "No data directory found yet.", "files": {}}
+    
+    file_structure = {}
+    
+    # Iterate through the data directory and find all subdirectories (dates) and excel files
+    for item in os.listdir(data_dir):
+        item_path = os.path.join(data_dir, item)
+        
+        # Check if it's a directory (our date folders)
+        if os.path.isdir(item_path):
+            # Find all .xlsx files in this date folder
+            excel_files = [f for f in os.listdir(item_path) if f.endswith(".xlsx")]
+            if excel_files:
+                # Sort files alphabetically/by time
+                file_structure[item] = sorted(excel_files)
+                
+    return {
+        "status": "success",
+        "total_folders": len(file_structure),
+        "files": file_structure
+    }
+
+@app.get("/download/{date_folder}/{file_name}")
+async def download_file(date_folder: str, file_name: str, api_key: str = Depends(verify_api_key)):
+    """
+    Downloads a specific Excel file.
+    Requires the date folder (e.g., 2026-09-22) and the exact file name.
+    Protected by API Key verification and path traversal prevention.
+    """
+    # Security check: Prevent path traversal attacks (e.g., passing '../' to read system files)
+    if ".." in date_folder or ".." in file_name or "/" in date_folder or "/" in file_name:
+        logger.warning("Path traversal attempt detected!")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid path characters detected.")
+        
+    file_path = os.path.join("data", date_folder, file_name)
+    
+    # Check if the requested file actually exists
+    if not os.path.exists(file_path) or not os.path.isfile(file_path):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Requested file does not exist.")
+        
+    logger.info(f"Serving file download: {file_path}")
+    
+    return FileResponse(
+        path=file_path,
+        filename=file_name,
+        media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
